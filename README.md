@@ -53,12 +53,12 @@ This makes readmission prediction a **top priority** for healthcare organization
 This project demonstrates a **production-grade machine learning system** that predicts readmission risk for diabetic patients, enabling proactive clinical interventions.
 
 **What makes this production-grade?**
-- ✅ **Scalable Infrastructure**: Multi-AZ Kubernetes deployment handling thousands of predictions
 - ✅ **Automated MLOps**: Self-healing pipelines with weekly retraining and drift-triggered retraining
-- ✅ **Enterprise Security**: HTTPS/TLS, WAF protection, IAM role-based access, secrets management
-- ✅ **High Availability**: Multi-AZ deployment with 3-replica services and zero-downtime updates
-- ✅ **Observability**: Comprehensive logging, metrics (Prometheus/Grafana), and alerting
 - ✅ **GenAI Integration**: AI-powered explanations and similar patient search using AWS Bedrock
+- ✅ **Observability**: Comprehensive logging, metrics (Prometheus/Grafana), and alerting
+- ✅ **Enterprise Security**: HTTPS/TLS, WAF protection, IAM role-based access, secrets management
+- ✅ **High Availability**: Multi-AZ deployment (us-east-1a, us-east-1b) with 3-replica services
+- ✅ **Scalable Infrastructure**: Kubernetes on EKS with auto-scaling and zero-downtime updates
 
 ### Key Differentiators
 
