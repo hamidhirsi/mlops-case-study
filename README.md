@@ -15,7 +15,6 @@
 - [Architecture](#architecture)
 - [Technology Stack](#technology-stack)
 - [Project Journey](#project-journey)
-- [Key Technical Achievements](#key-technical-achievements)
 - [Results & Impact](#results--impact)
 - [Contact](#contact)
 
@@ -59,18 +58,6 @@ This project demonstrates a **production-grade machine learning system** that pr
 - ✅ **Enterprise Security**: HTTPS/TLS, WAF protection, IAM role-based access, secrets management
 - ✅ **High Availability**: Multi-AZ deployment (us-east-1a, us-east-1b) with 3-replica services
 - ✅ **Scalable Infrastructure**: Kubernetes on EKS with auto-scaling and zero-downtime updates
-
-### Key Differentiators
-
-| Aspect | This Project | Typical Portfolio Projects |
-|--------|-------------|---------------------------|
-| **Infrastructure** | Multi-AZ Kubernetes on EKS with Terraform IaC | Local Flask app or single EC2 instance |
-| **ML Platform** | Distributed training (SageMaker) + MLflow Registry | Jupyter notebook with pickle files |
-| **Deployment** | Zero-downtime rolling updates with Helm | Manual deployment or basic Docker |
-| **Monitoring** | Prometheus/Grafana + CloudWatch + drift detection | Maybe basic logging |
-| **CI/CD** | GitHub Actions with automated retraining pipelines | No automation |
-| **GenAI** | Bedrock RAG pipeline with vector search | No AI explanations |
-| **Security** | WAF, TLS, External Secrets Operator, IAM IRSA | Often none |
 
 ---
 
@@ -305,8 +292,6 @@ This project evolved through **6 phases**, transitioning from local prototyping 
 | **Model Reload** | 5-min S3 polling | Zero-downtime updates |
 | **Vector Search** | Qdrant HNSW index | Sub-second semantic search |
 
-**Note**: Performance metrics (latency, throughput, uptime) not formally load-tested. Architecture designed for production workloads but not benchmarked.
-
 ---
 
 ### **Cost Optimization Strategies**
@@ -316,8 +301,6 @@ This project evolved through **6 phases**, transitioning from local prototyping 
 | **Spot Instances** | Reduces EC2 costs | EKS worker nodes (non-critical workloads) |
 | **S3 Lifecycle Policies** | Reduces storage costs | Archive old models to Glacier after 90 days |
 | **Lambda Reserved Concurrency** | Prevents runaway costs | Caps Bedrock invocations |
-
-**Note**: Cost savings percentages and monthly estimates not formally measured. Strategies implemented but not benchmarked against baseline.
 
 ---
 
@@ -360,10 +343,9 @@ Feature importance analysis from XGBoost model:
 ✅ **Zero-Downtime Deployment**: Model hot-swapping avoided complex blue-green setups
 
 ### **What I'd Do Differently**
-⚠️ **Feature Store Earlier**: Would have used SageMaker Feature Store from Phase 1
-⚠️ **Databricks Costs**: Expensive for side project; Delta Lake on S3 would suffice
-⚠️ **Monitoring First**: Should have set up Prometheus/Grafana before deployment
-⚠️ **Load Testing**: Would run k6/Locust tests before claiming performance numbers
+⚠️ **Feature Store Earlier**: Would have used SageMaker Feature Store from Phase 1 for real-time serving
+⚠️ **Monitoring First**: Should have set up Prometheus/Grafana before deployment for better visibility
+⚠️ **Load Testing**: Would run comprehensive k6/Locust tests to establish performance baselines
 
 ---
 
