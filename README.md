@@ -197,30 +197,16 @@ All Services → CloudWatch Logs + Prometheus → Grafana Dashboards → SNS Ale
 
 ## Project Journey
 
-This project evolved through **6 distinct phases**, showcasing the transition from local prototyping to enterprise-grade production infrastructure.
+This project evolved through **6 phases**, transitioning from local prototyping to enterprise-grade production infrastructure.
 
 ### Phase 1: Data Engineering & Feature Development ✅
 
-**Objective**: Build production-ready data pipeline with distributed processing
-
-**What I Built**:
 - Configured Databricks workspace with AWS S3 integration
-- PySpark pipelines for data ingestion, cleaning, and transformation
-- Feature engineering: **44 features** from 73 raw attributes
-  - Demographic encoding (age groups, race, gender)
-  - Hospital utilization scores (inpatient/outpatient/emergency visits)
-  - Medication complexity metrics (polypharmacy counts)
-  - Comorbidity aggregations (number of diagnoses)
-  - Interaction features (age × medications, time × procedures)
-- Delta Lake feature store for versioned, time-travel-enabled features
-- MLflow experiment tracking integrated from day one
-
-**Key Achievements**:
-- Processed **101,766 patient records** → 81,412 training / 20,354 test samples
-- S3 data lake structure: `s3://bucket/processed/train_features.csv`, `test_features.csv`
-- Automated feature versioning with Delta Lake snapshots
-
-**Screenshots**:
+- Built PySpark pipelines for data ingestion, cleaning, and transformation
+- Engineered 44 features from 73 raw attributes (demographics, hospital utilization, medication complexity, comorbidities, interaction features)
+- Implemented Delta Lake feature store for versioned features
+- Integrated MLflow experiment tracking
+- **Result**: Processed 101,766 patient records → 81,412 training / 20,354 test samples
 
 ![Feature Engineering Notebook](docs/screenshots/feature-engineering-notebook.png)
 *Databricks Jupyter notebook showing PySpark feature engineering pipeline*
@@ -232,315 +218,67 @@ This project evolved through **6 distinct phases**, showcasing the transition fr
 
 ### Phase 2: ML Training & Model Registry ✅
 
-**Objective**: Train production-grade models with enterprise MLOps tools
-
-**What I Built**:
-- SageMaker training jobs for XGBoost and PyTorch neural networks
-- Hyperparameter experimentation:
-  - Class imbalance handling: `scale_pos_weight=8.0` (9:1 class ratio)
-  - XGBoost depths, learning rates, estimator counts
-  - PyTorch architectures, dropout rates, batch sizes
-- MLflow model registry on Databricks with stage management
-- Model versioning (v1 → v2 → v3) with metadata tracking
-
-**Best Model Configuration**:
-```
-XGBoost Classifier
-- scale_pos_weight: 8.0
-- max_depth: 3
-- learning_rate: 0.1
-- n_estimators: 200
-- Training instance: SageMaker ml.m5.2xlarge
-- Training time: ~8 minutes
-```
-
-**Model Performance**:
-| Metric | Value |
-|--------|-------|
-| **ROC-AUC** | 0.66 |
-| **Precision** | 0.17 |
-| **Recall** | 0.57 |
-| **F1-Score** | 0.26 |
-
-**Note on Performance**: ROC-AUC of 0.66 is **realistic for this problem**:
-- Hospital readmission is inherently noisy (many unobservable factors)
-- Published research on this dataset shows similar results (0.60-0.68 range)
-- Class imbalance (9:1 ratio) makes high precision/recall challenging
-- **Production value**: Even 0.66 AUC provides actionable risk scores for clinical triage
-
-**Screenshots**:
+- Trained XGBoost and PyTorch models on SageMaker
+- Tuned hyperparameters (class weights, learning rates, depths, architectures)
+- Configured MLflow model registry on Databricks with stage management (None → Staging → Production)
+- **Best Model**: XGBoost (Tuned) with scale_pos_weight=8.0, max_depth=3, learning_rate=0.1, n_estimators=200
+- **Performance**: ROC-AUC 0.66, Precision 0.17, Recall 0.57, F1-Score 0.26
 
 ![MLflow Model Registry](docs/screenshots/mlflow-model-registry.png)
 *Databricks MLflow Model Registry showing hospital-readmission-model with 2 versions*
 
 ![MLflow Model Version](docs/screenshots/mlflow-model-version.png)
-*MLflow Model Registry Version 1 details with transition options (Staging → Production)*
+*MLflow Model Registry Version 1 details with transition options*
 
 ![MLflow Experiment Run](docs/screenshots/mlflow-experiment-run.png)
-*MLflow experiment run from 04_model_training_sagemaker with metrics and parameters*
+*MLflow experiment run showing training metrics*
 
 ![SageMaker Training Job](docs/screenshots/sagemaker-training-job.png)
-*AWS SageMaker training job console showing status history (Starting → Downloading → Training → Uploading → Completed)*
+*AWS SageMaker training job status history*
 
 ---
 
 ### Phase 3: Kubernetes Deployment & Infrastructure ✅
 
-**Objective**: Deploy production API with high availability and monitoring
-
-**What I Built**:
-- **EKS Cluster**: Multi-AZ Kubernetes cluster (us-east-1a, us-east-1b)
-- **FastAPI Backend** (3 replicas with HPA):
-  - `/predict` - ML predictions with real-time model loading
-  - `/chat` - GenAI-powered explanations via Bedrock
-  - `/similar-patients` - Vector similarity search
-  - `/health` - Kubernetes liveness/readiness probes
-  - `/metrics` - Prometheus exposition endpoint
-- **Streamlit Frontend** (3 replicas): Interactive UI for clinicians
-- **Networking**:
-  - Application Load Balancer with HTTPS (ACM certificates)
-  - Route53 DNS: `api.machinelearning.hamidhirsi.com`, `grafana.machinelearning.hamidhirsi.com`
-  - AWS WAF: Rate limiting (2000 req/5min), OWASP Top 10 rules
-- **Monitoring Stack**:
-  - Prometheus for metrics scraping
-  - Grafana for visualization dashboards
-  - AlertManager for SNS integration
-- **Security**:
-  - External Secrets Operator syncs AWS Secrets Manager → K8s secrets
-  - IAM Roles for Service Accounts (IRSA) for pod-level permissions
-  - Network policies for pod-to-pod communication
-
-**Infrastructure Highlights**:
-- **High Availability**: Multi-AZ deployment with 3 replicas per service
-- **Auto-scaling**: Horizontal Pod Autoscaler (HPA) based on CPU/memory
-- **Zero-downtime**: Rolling updates with readiness probes
-- **Cost-optimized**: VPC endpoints, S3 lifecycle policies, Lambda concurrency limits
-
-**Infrastructure as Code**:
-- 100% Terraform-managed AWS resources
-- Modular design: VPC, EKS, IAM, S3, Lambda, Step Functions, etc.
-- GitOps workflow: Terraform plan on PR, apply on merge
+- Deployed multi-AZ EKS cluster with FastAPI backend (3 replicas) and Streamlit frontend
+- Configured ALB with HTTPS (ACM certificates), Route53 DNS, AWS WAF (rate limiting 2000 req/5min)
+- Implemented Prometheus + Grafana monitoring stack
+- Deployed External Secrets Operator for AWS Secrets Manager integration
+- **Infrastructure**: 100% Terraform-managed, multi-AZ high availability, auto-scaling
 
 ---
 
 ### Phase 4: GenAI/RAG Integration ✅
 
-**Objective**: Add AI-powered explainability and similar patient search
-
-**What I Built**:
-- **AWS Bedrock Integration**:
-  - Claude 3.5 Sonnet for natural language explanations of predictions
-  - Titan Embeddings v2 for patient vectorization (1,536 dimensions)
-- **Qdrant Vector Database** (deployed on Kubernetes):
-  - 81,412 patient embeddings indexed
-  - Sub-100ms semantic similarity search
-  - HNSW index for approximate nearest neighbors
-- **Event-Driven RAG Pipeline**:
-  - S3 bucket for patient data uploads
-  - S3 Event Notifications → SQS queue
-  - Lambda function consumes SQS → generates embeddings via Bedrock → stores in Qdrant
-  - Automatic scaling: Lambda concurrency = SQS messages
-- **API Endpoints**:
-  - `/chat`: Conversational AI for clinical decision support
-    - Example: "Why is this patient high risk?"
-    - Claude analyzes patient features + historical context
-  - `/similar-patients`: Case-based reasoning
-    - Returns top 5 most similar historical patients with outcomes
-
-**GenAI Features**:
-- Real-time prediction explanations using patient context
-- Semantic search for similar historical cases (not just feature matching)
-- Conversational interface for "what-if" scenario analysis
-- Automatic embedding updates on new data uploads (fully event-driven)
-
-**Screenshots**:
+- Integrated AWS Bedrock (Claude 3.5 Sonnet for explanations, Titan Embeddings for patient similarity)
+- Deployed Qdrant vector database on Kubernetes with 81,412 patient embeddings
+- Built event-driven RAG pipeline (S3 → SQS → Lambda → Bedrock → Qdrant)
+- Created `/chat` endpoint for conversational AI and `/similar-patients` for semantic search
 
 ![AWS Bedrock CloudWatch Metrics](docs/screenshots/bedrock-cloudwatch-metrics.png)
-*AWS CloudWatch dashboard showing Bedrock invocation metrics for Claude 3.5 Sonnet and Titan Embeddings*
+*AWS Bedrock CloudWatch dashboard showing invocation metrics*
 
 ---
 
 ### Phase 5: MLOps Automation ✅
 
-**Objective**: Implement fully automated model lifecycle management
-
-**What I Built**:
-
-#### **Automated Retraining Pipeline**
-- **Triggers** (dual-mode):
-  1. **Time-based**: EventBridge schedule (Sundays 2 AM UTC)
-  2. **Event-based**: CloudWatch alarm when drift detected (high-risk prediction rate > 20%)
-- **Orchestration**: AWS Step Functions state machine
-  - Step 1: Trigger SageMaker training job
-  - Step 2: Lambda evaluates model (ROC-AUC > 0.75 threshold)
-  - Step 3a: If pass → Lambda promotes to MLflow "Production" stage
-  - Step 3b: If fail → Lambda archives to "Staging" + sends SNS alert
-- **Zero-downtime deployment**:
-  - FastAPI polls S3 every 5 minutes for new models
-  - Hot-swaps model in memory without pod restarts
-  - No downtime during model updates
-
-#### **CI/CD Workflows (GitHub Actions)**
-- **Infrastructure Pipeline**:
-  - `terraform-plan.yml`: Runs `terraform plan` on PR
-  - `terraform-apply.yml`: Runs `terraform apply` on merge to main
-- **Application Pipeline**:
-  - Builds Docker images for FastAPI/Streamlit
-  - Pushes to Docker Hub / ECR
-  - Deploys to EKS via Helm charts
-- **Manual Triggers**:
-  - Workflow dispatch for ad-hoc ML training
-  - RAG pipeline trigger for batch embedding generation
-
-#### **Monitoring & Alerting**
-- CloudWatch metric filters extract prediction metrics from FastAPI logs
-- CloudWatch alarm detects drift (triggers retraining when high-risk rate exceeds baseline)
-- SNS email notifications for training failures
-- Prometheus alerts for API latency spikes, pod crashes
-
-**Automation Highlights**:
-- **Fully hands-off**: No manual intervention for weekly retraining
-- **Self-healing**: Failed models don't reach production, drift automatically triggers retraining
-- **Observable**: Every step logged to CloudWatch with structured JSON
+- Implemented automated retraining pipeline with dual triggers:
+  - Time-based: EventBridge schedule (Sundays 2 AM UTC)
+  - Event-based: CloudWatch alarm on drift detection (high-risk predictions > 20%)
+- Built Step Functions orchestration (SageMaker training → Lambda evaluation → MLflow promotion)
+- Configured zero-downtime model reload (FastAPI polls S3 every 5 minutes, hot-swaps models)
+- Created GitHub Actions CI/CD workflows for infrastructure and application deployment
 
 ---
 
 ### Phase 6: Production Hardening ✅
 
-**Objective**: Ensure enterprise-grade reliability, security, and performance
-
-**What I Built**:
-
-#### **Security Hardening**
-- **Network Security**:
-  - Private subnets for EKS worker nodes (no public IPs)
-  - VPC endpoints for S3, ECR, CloudWatch (no internet egress)
-  - Security groups with least-privilege rules
-- **Application Security**:
-  - TLS 1.2+ enforcement on ALB
-  - WAF rules: SQL injection, XSS, rate limiting
-  - No hardcoded credentials (100% secrets in AWS Secrets Manager)
-- **Access Control**:
-  - IAM IRSA for fine-grained pod permissions
-  - No shared IAM user keys (role-based only)
-  - External Secrets Operator auto-rotates secrets
-
-#### **Performance Optimization**
-- **Caching**:
-  - Model cached in memory (5-min refresh interval)
-  - No S3 download on every prediction
-- **Efficient Scaling**:
-  - HPA targets: 70% CPU, 80% memory
-  - Cluster Autoscaler adds nodes when pods pending
-- **Cost Optimization**:
-  - VPC endpoints save ~60% on NAT costs
-  - S3 lifecycle policies archive old models to Glacier after 90 days
-  - Lambda reserved concurrency prevents runaway Bedrock costs
-
-#### **Reliability Features**
-- **Health Checks**:
-  - Liveness probe: Kills unhealthy pods
-  - Readiness probe: Removes pods from load balancer during startup
-- **Graceful Degradation**:
-  - If Bedrock unavailable → `/chat` returns error but `/predict` still works
-  - If MLflow unreachable → Uses last-known-good model from S3
-- **Error Handling**:
-  - Retry logic with exponential backoff for transient failures
-  - Dead-letter queues (DLQ) for failed SQS messages
-  - SNS alerts for critical failures
+- Implemented security hardening (private subnets, VPC endpoints, TLS 1.2+, WAF rules, IAM IRSA)
+- Configured health checks (liveness/readiness probes), graceful degradation, error handling
+- Optimized costs (VPC endpoints, S3 lifecycle policies, Lambda concurrency limits)
+- Ensured high availability (Pod Disruption Budgets, multi-AZ, resource requests/limits)
 
 ---
-
-## Key Technical Achievements
-
-### 1. **Zero-Downtime Model Updates**
-**Challenge**: How do you deploy new models without API downtime?
-
-**Solution**:
-- FastAPI background task polls S3 every 5 minutes
-- Downloads new model only if S3 object ETag changed
-- Hot-swaps model in memory (atomic pointer update)
-- No pod restarts, no traffic disruption
-
-**Code Pattern** (simplified):
-```python
-# Runs every 5 minutes in background thread
-async def check_for_new_model():
-    s3_etag = get_s3_object_etag(bucket, key)
-    if s3_etag != current_model_etag:
-        new_model = download_and_load_model(bucket, key)
-        global current_model
-        current_model = new_model  # Atomic swap
-        current_model_etag = s3_etag
-```
-
-**Result**: Model updates take 5-10 minutes max (polling interval), with zero request failures.
-
----
-
-### 2. **Event-Driven RAG Pipeline**
-**Challenge**: How do you generate 81k+ embeddings without blocking API?
-
-**Solution**:
-- Decoupled architecture: S3 upload triggers async pipeline
-- S3 Event Notifications → SQS → Lambda (auto-scales to 1000 concurrent)
-- Each Lambda processes 1 patient → Bedrock embedding → Qdrant insert
-- Failures go to DLQ for retry
-
-**Throughput**: Can process 10,000 patients in ~2 minutes (Lambda concurrency limit)
-
----
-
-### 3. **Drift-Triggered Retraining**
-**Challenge**: Models degrade over time due to data distribution shifts.
-
-**Solution**:
-- CloudWatch Metric Filters extract metrics from existing FastAPI logs
-  - `PredictionCount`: Total predictions per hour
-  - `HighRiskPredictions`: Predictions with probability > 0.6
-- CloudWatch Alarm triggers when `(HighRiskPredictions / PredictionCount) > 20%`
-  - Baseline is ~11% (class distribution)
-  - Alarm indicates potential data drift
-- EventBridge rule listens for alarm state change → triggers same Step Functions workflow
-
-**Result**: Self-healing system that automatically retrains when data patterns change.
-
----
-
-### 4. **Multi-Trigger Retraining**
-**Challenge**: ML CI/CD requires multiple trigger types (schedule, drift, manual).
-
-**Solution**: Same Step Functions workflow, multiple EventBridge rules:
-- Rule 1: `cron(0 2 ? * SUN *)` - Weekly schedule
-- Rule 2: CloudWatch alarm state change - Drift detection
-- Rule 3: GitHub Actions workflow dispatch - Manual trigger
-
-**Benefit**: DRY principle - one pipeline, three entry points.
-
----
-
-### 5. **Infrastructure as Code (100% Terraform)**
-**Challenge**: Manual AWS console clicks are error-prone and not reproducible.
-
-**Solution**:
-- All AWS resources defined in Terraform (VPC, EKS, Lambda, S3, IAM, etc.)
-- Modular design: Reusable modules for common patterns
-- Variables file (`terraform.tfvars`) for environment-specific config
-- State stored in S3 with DynamoDB locking (team collaboration)
-
-**Result**: `terraform apply` recreates entire infrastructure from scratch in ~15 minutes.
-
----
-
-### 6. **Kubernetes Best Practices**
-- **Resource Requests/Limits**: Prevents OOM kills, ensures QoS
-- **Pod Disruption Budgets**: At least 2 replicas available during voluntary disruptions
-- **Network Policies**: Restrict pod-to-pod traffic (defense in depth)
-- **RBAC**: Service accounts with minimal permissions
-- **Helm Charts**: Parameterized deployments for dev/staging/prod environments
-
----
-
 ## Results & Impact
 
 ### **Model Performance**
