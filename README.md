@@ -13,6 +13,7 @@
 - [Business Context](#business-context)
 - [Solution Overview](#solution-overview)
 - [Architecture](#architecture)
+- [Architecture & Design Decisions](#architecture--design-decisions)
 - [Technology Stack](#technology-stack)
 - [Project Journey](#project-journey)
 - [Results & Impact](#results--impact)
@@ -111,8 +112,117 @@ All Services → CloudWatch Logs + Prometheus → Grafana Dashboards → SNS Ale
 - **Visualization**: Grafana dashboards for API latency, throughput, model performance
 - **Alerting**: SNS email notifications for training failures, CloudWatch alarms for drift detection
 
----
+## Architecture & Design Decisions
 
+Building a production ML system requires making deliberate architectural choices. Here's why I chose specific technologies and patterns for this project.
+
+### **Why Databricks + SageMaker (Not Just SageMaker)?**
+
+**The Question**: Why use both Databricks and SageMaker when SageMaker has notebooks and feature store?
+
+**The Answer**: Separation of concerns and team scalability.
+
+- **Databricks**: Data engineering team's territory. PySpark pipelines for distributed ETL, Delta Lake for versioned features, collaborative notebooks for exploratory analysis.
+- **SageMaker**: ML engineering team's territory. Managed training jobs, hyperparameter tuning, model artifacts in S3.
+- **MLflow on Databricks**: Single source of truth for model registry accessible to both teams.
+
+This pattern mirrors real enterprise setups where data engineers and ML engineers work in different tools but share a common registry. SageMaker Feature Store would have simplified this, but the Databricks + Delta Lake approach provides better feature lineage and time-travel capabilities.
+
+### **Why Event-Driven RAG Pipeline (Not Real-Time Sync)?**
+
+**The Question**: Why use S3 → SQS → Lambda instead of directly calling Bedrock from FastAPI?
+
+**The Answer**: Decoupling and cost control.
+
+- **S3 Event Notifications**: Trigger embedding generation automatically when new data arrives
+- **SQS Queue**: Buffer for Lambda functions, handles traffic spikes gracefully
+- **Lambda**: Auto-scales to 1000 concurrent executions, processes embeddings asynchronously
+- **Dead Letter Queue**: Captures failures for retry without losing data
+
+Real-time embedding generation would increase API latency by 500-1000ms per request. Pre-computing embeddings offline keeps prediction latency low and Bedrock costs predictable.
+
+### **Why Drift Detection via CloudWatch Alarms (Not Statistical Tests)?**
+
+**The Question**: Why use simple metric thresholds instead of KS tests or PSI for drift detection?
+
+**The Answer**: Pragmatism over perfection.
+
+CloudWatch Metric Filters extract `HighRiskPredictions / TotalPredictions` from existing FastAPI logs. When this ratio exceeds 20% (baseline is 11%), it signals potential data drift. This approach:
+- **No new code**: Uses existing prediction logs
+- **No new infrastructure**: CloudWatch alarms already in place
+- **Actionable**: Triggers retraining immediately via EventBridge
+
+Statistical tests (KS, PSI) would be more rigorous but require storing historical distributions, running scheduled jobs, and managing state. For a v1 drift detection system, simple heuristics provide 80% of the value with 20% of the complexity.
+
+### **Why Step Functions (Not Airflow or Prefect)?**
+
+**The Question**: Why AWS Step Functions instead of a dedicated orchestrator like Airflow?
+
+**The Answer**: Serverless simplicity and AWS-native integration.
+
+Step Functions orchestrates the ML pipeline: SageMaker training → Lambda evaluation → Lambda promotion. Benefits:
+- **No infrastructure**: No Airflow servers to manage, patch, or scale
+- **Native AWS**: Direct integration with SageMaker, Lambda, SNS without custom operators
+- **Visual editor**: Stakeholders can see the pipeline flow in AWS Console
+- **Pay-per-use**: Only pay for state transitions, not idle server time
+
+For complex DAGs with dozens of tasks and custom sensors, Airflow wins. For a linear ML pipeline with 3-4 steps, Step Functions is the right tool.
+
+### **Why MLflow on Databricks (Not SageMaker Model Registry)?**
+
+**The Question**: Why host MLflow on Databricks instead of using SageMaker's built-in model registry?
+
+**The Answer**: Consistency with data engineering workflow.
+
+Since feature engineering happens in Databricks notebooks, keeping the model registry there creates a unified workflow:
+1. Data engineers create features in Databricks → Delta Lake
+2. ML engineers log experiments in Databricks → MLflow
+3. SageMaker training jobs register models → MLflow (via API)
+4. FastAPI pulls models from S3 (MLflow-backed storage)
+
+SageMaker Model Registry would work, but it creates a split: features in Databricks, models in SageMaker. MLflow acts as the integration layer between both platforms.
+
+### **Why External Secrets Operator (Not Hardcoded Secrets)?**
+
+**The Question**: Why use External Secrets Operator instead of Kubernetes secrets directly?
+
+**The Answer**: Security and centralization.
+
+External Secrets Operator syncs AWS Secrets Manager → Kubernetes secrets automatically:
+- **Single source of truth**: Secrets managed in AWS Secrets Manager (audited, versioned, rotated)
+- **No secret sprawl**: No hardcoded secrets in Helm charts or ConfigMaps
+- **Automatic rotation**: When secrets rotate in AWS, pods get updated automatically
+
+This pattern is essential for enterprise compliance (SOC 2, HIPAA). Hardcoded secrets would fail security audits immediately.
+
+### **Why Multi-AZ Deployment (Not Single AZ)?**
+
+**The Question**: Why deploy across us-east-1a and us-east-1b instead of single AZ?
+
+**The Answer**: High availability for production SLAs.
+
+Multi-AZ protects against:
+- **AZ failures**: AWS occasionally has zone-level outages (us-east-1a went down in 2021)
+- **Planned maintenance**: Can drain one AZ for upgrades without downtime
+- **Load distribution**: ALB distributes traffic across zones, reducing blast radius
+
+For a portfolio project, single AZ would suffice. But this demonstrates understanding of production reliability requirements.
+
+### **Why Terraform (Not AWS Console or CDK)?**
+
+**The Question**: Why Terraform instead of ClickOps or AWS CDK?
+
+**The Answer**: Infrastructure reproducibility and multi-cloud portability.
+
+Terraform provides:
+- **Version control**: Infrastructure changes tracked in Git
+- **Plan before apply**: See changes before execution, prevent accidents
+- **Modular design**: Reusable VPC, EKS, Lambda modules across projects
+- **Declarative syntax**: State file ensures convergence to desired config
+
+AWS CDK is excellent for TypeScript/Python developers, but Terraform's HCL is more readable for infrastructure teams and easier to onboard new contributors.
+
+---
 ## Technology Stack
 
 ### **Infrastructure & DevOps**
@@ -316,36 +426,6 @@ Feature importance analysis from XGBoost model:
 **Clinical Insight**: Patients with high hospital utilization (frequent admissions, long stays, complex medication regimens) are strongest readmission predictors.
 
 ---
-
-## Future Enhancements
-
-### **Planned Features**
-- [ ] **A/B Testing Framework**: Champion/challenger model deployment with traffic splitting
-- [ ] **Feature Store**: Centralized feature repository with real-time serving (SageMaker Feature Store or Feast)
-- [ ] **Shadow Mode**: Test new models on live traffic without serving predictions
-- [ ] **Advanced Monitoring**: Statistical tests (KS test, PSI) on feature distributions
-- [ ] **Multi-cloud Deployment**: Azure/GCP for vendor redundancy
-
-### **Model Improvements**
-- [ ] **Ensemble Methods**: Combine XGBoost + Neural Network predictions
-- [ ] **Time-Series Features**: Trends in lab results, vitals over admission
-- [ ] **External Data**: Social determinants of health (zip code demographics)
-- [ ] **Calibration**: Platt scaling for better probability estimates
-
----
-
-## Lessons Learned
-
-### **What Worked Well**
-✅ **Infrastructure as Code**: Terraform made iteration fast and reproducible
-✅ **MLflow Registry**: Seamless model versioning and stage management
-✅ **Event-Driven Architecture**: Decoupled RAG pipeline scaled effortlessly
-✅ **Zero-Downtime Deployment**: Model hot-swapping avoided complex blue-green setups
-
-### **What I'd Do Differently**
-⚠️ **Feature Store Earlier**: Would have used SageMaker Feature Store from Phase 1 for real-time serving
-⚠️ **Monitoring First**: Should have set up Prometheus/Grafana before deployment for better visibility
-⚠️ **Load Testing**: Would run comprehensive k6/Locust tests to establish performance baselines
 
 ---
 
