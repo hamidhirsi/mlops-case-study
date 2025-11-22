@@ -54,7 +54,7 @@ This project demonstrates a **production-grade machine learning system** that pr
 
 **What makes this production-grade?**
 - ✅ **Scalable Infrastructure**: Multi-AZ Kubernetes deployment handling thousands of predictions
-- ✅ **Automated MLOps**: Self-healing pipelines with weekly retraining
+- ✅ **Automated MLOps**: Self-healing pipelines with weekly retraining and drift-triggered retraining
 - ✅ **Enterprise Security**: HTTPS/TLS, WAF protection, IAM role-based access, secrets management
 - ✅ **High Availability**: 99.9% uptime with 3-replica deployments and zero-downtime updates
 - ✅ **Observability**: Comprehensive logging, metrics (Prometheus/Grafana), and alerting
@@ -67,7 +67,7 @@ This project demonstrates a **production-grade machine learning system** that pr
 | **Infrastructure** | Multi-AZ Kubernetes on EKS with Terraform IaC | Local Flask app or single EC2 instance |
 | **ML Platform** | Distributed training (SageMaker) + MLflow Registry | Jupyter notebook with pickle files |
 | **Deployment** | Zero-downtime rolling updates with Helm | Manual deployment or basic Docker |
-| **Monitoring** | Prometheus/Grafana + CloudWatch | Maybe basic logging |
+| **Monitoring** | Prometheus/Grafana + CloudWatch + drift detection | Maybe basic logging |
 | **CI/CD** | GitHub Actions with automated retraining pipelines | No automation |
 | **GenAI** | Bedrock RAG pipeline with vector search | No AI explanations |
 | **Security** | WAF, TLS, External Secrets Operator, IAM IRSA | Often none |
@@ -94,9 +94,11 @@ User → Route53 → WAF → ALB → EKS → FastAPI → Model Prediction
 
 #### 2. **ML Lifecycle** (Training & Deployment)
 ```
-EventBridge Schedule → Step Functions → SageMaker → Lambda Evaluation → MLflow → S3 → FastAPI
+EventBridge (Schedule + Drift Alarm) → Step Functions → SageMaker → Lambda Evaluation → MLflow → S3 → FastAPI
 ```
-- **Trigger**: Weekly schedule (Sundays 2 AM UTC)
+- **Triggers**: Dual-mode triggering
+  - Time-based: Weekly schedule (Sundays 2 AM UTC)
+  - Event-based: CloudWatch alarm when drift detected (high-risk predictions > 20%)
 - **Orchestration**: AWS Step Functions with error handling
 - **Training**: SageMaker with XGBoost on ml.m5.2xlarge instances
 - **Validation**: Lambda evaluates ROC-AUC (must be > 0.75)
@@ -120,7 +122,7 @@ All Services → CloudWatch Logs + Prometheus → Grafana Dashboards → SNS Ale
 - **Logging**: Structured JSON logs in CloudWatch
 - **Metrics**: Prometheus scrapes FastAPI `/metrics`, Kubernetes node metrics
 - **Visualization**: Grafana dashboards for API latency, throughput, model performance
-- **Alerting**: SNS email notifications for training failures
+- **Alerting**: SNS email notifications for training failures, CloudWatch alarms for drift detection
 
 ---
 
@@ -365,7 +367,9 @@ XGBoost Classifier
 **What I Built**:
 
 #### **Automated Retraining Pipeline**
-- **Trigger**: EventBridge schedule (Sundays 2 AM UTC)
+- **Triggers** (dual-mode):
+  1. **Time-based**: EventBridge schedule (Sundays 2 AM UTC)
+  2. **Event-based**: CloudWatch alarm when drift detected (high-risk prediction rate > 20%)
 - **Orchestration**: AWS Step Functions state machine
   - Step 1: Trigger SageMaker training job
   - Step 2: Lambda evaluates model (ROC-AUC > 0.75 threshold)
@@ -389,13 +393,14 @@ XGBoost Classifier
   - RAG pipeline trigger for batch embedding generation
 
 #### **Monitoring & Alerting**
+- CloudWatch metric filters extract prediction metrics from FastAPI logs
+- CloudWatch alarm detects drift (triggers retraining when high-risk rate exceeds baseline)
 - SNS email notifications for training failures
 - Prometheus alerts for API latency spikes, pod crashes
-- CloudWatch Logs for centralized logging
 
 **Automation Highlights**:
 - **Fully hands-off**: No manual intervention for weekly retraining
-- **Self-healing**: Failed models don't reach production
+- **Self-healing**: Failed models don't reach production, drift automatically triggers retraining
 - **Observable**: Every step logged to CloudWatch with structured JSON
 
 ---
@@ -486,7 +491,35 @@ async def check_for_new_model():
 
 ---
 
-### 3. **Infrastructure as Code (100% Terraform)**
+### 3. **Drift-Triggered Retraining**
+**Challenge**: Models degrade over time due to data distribution shifts.
+
+**Solution**:
+- CloudWatch Metric Filters extract metrics from existing FastAPI logs
+  - `PredictionCount`: Total predictions per hour
+  - `HighRiskPredictions`: Predictions with probability > 0.6
+- CloudWatch Alarm triggers when `(HighRiskPredictions / PredictionCount) > 20%`
+  - Baseline is ~11% (class distribution)
+  - Alarm indicates potential data drift
+- EventBridge rule listens for alarm state change → triggers same Step Functions workflow
+
+**Result**: Self-healing system that automatically retrains when data patterns change.
+
+---
+
+### 4. **Multi-Trigger Retraining**
+**Challenge**: ML CI/CD requires multiple trigger types (schedule, drift, manual).
+
+**Solution**: Same Step Functions workflow, multiple EventBridge rules:
+- Rule 1: `cron(0 2 ? * SUN *)` - Weekly schedule
+- Rule 2: CloudWatch alarm state change - Drift detection
+- Rule 3: GitHub Actions workflow dispatch - Manual trigger
+
+**Benefit**: DRY principle - one pipeline, three entry points.
+
+---
+
+### 5. **Infrastructure as Code (100% Terraform)**
 **Challenge**: Manual AWS console clicks are error-prone and not reproducible.
 
 **Solution**:
@@ -499,7 +532,7 @@ async def check_for_new_model():
 
 ---
 
-### 4. **Kubernetes Best Practices**
+### 6. **Kubernetes Best Practices**
 - **Resource Requests/Limits**: Prevents OOM kills, ensures QoS
 - **Pod Disruption Budgets**: At least 2 replicas available during voluntary disruptions
 - **Network Policies**: Restrict pod-to-pod traffic (defense in depth)
@@ -570,7 +603,6 @@ Feature importance analysis from XGBoost model:
 ## Future Enhancements
 
 ### **Planned Features**
-- [ ] **Data Drift Detection**: CloudWatch alarms to trigger retraining when data distribution shifts
 - [ ] **A/B Testing Framework**: Champion/challenger model deployment with traffic splitting
 - [ ] **Feature Store**: Centralized feature repository with real-time serving (SageMaker Feature Store or Feast)
 - [ ] **Shadow Mode**: Test new models on live traffic without serving predictions
