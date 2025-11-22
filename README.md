@@ -405,14 +405,15 @@ This project was built as a **portfolio demonstration** of production-grade MLOp
 
 ## Contact
 
-**Hamid Hirsi**
-Senior Platform Engineer - AI/ML
+#### **Hamid Hirsi**
+**Senior Platform Engineer - AI/ML**
 
 - **GitHub**: [@hamidhirsi](https://github.com/hamidhirsi)
 - **LinkedIn**: [linkedin.com/in/hamidhirsi](https://linkedin.com/in/hamidhirsi)
 - **Email**: hamidhirsi7@gmail.com
 
-### **Interested in discussing this project?** 
+#### **Interested in discussing this project?** 
+
 I'm happy to walk through the technical architecture, design decisions, and lessons learned in an interview setting.
 
 ---
