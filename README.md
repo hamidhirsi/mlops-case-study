@@ -114,113 +114,75 @@ All Services → CloudWatch Logs + Prometheus → Grafana Dashboards → SNS Ale
 
 ## Architecture & Design Decisions
 
-Building a production ML system requires making deliberate architectural choices. Here's why I chose specific technologies and patterns for this project.
+Production ML systems require deliberate architectural choices that balance scalability, maintainability, and operational complexity. This section outlines the key design decisions and their rationale.
 
-### **Why Databricks + SageMaker (Not Just SageMaker)?**
+### **Hybrid Cloud ML Platform: Databricks + SageMaker**
 
-**The Question**: Why use both Databricks and SageMaker when SageMaker has notebooks and feature store?
+The architecture leverages both Databricks and SageMaker to separate data engineering from ML engineering concerns, mirroring enterprise team structures.
 
-**The Answer**: Separation of concerns and team scalability.
+**Databricks** handles data-intensive workloads: PySpark pipelines process 100k+ patient records, Delta Lake provides versioned feature storage with time-travel capabilities, and collaborative notebooks enable exploratory data analysis. This platform serves as the data engineering layer where features are engineered and validated.
 
-- **Databricks**: Data engineering team's territory. PySpark pipelines for distributed ETL, Delta Lake for versioned features, collaborative notebooks for exploratory analysis.
-- **SageMaker**: ML engineering team's territory. Managed training jobs, hyperparameter tuning, model artifacts in S3.
-- **MLflow on Databricks**: Single source of truth for model registry accessible to both teams.
+**SageMaker** manages model training infrastructure: distributed training jobs run XGBoost and PyTorch models on managed compute (ml.m5.2xlarge instances), hyperparameter tuning experiments execute in parallel, and model artifacts are stored in S3 with versioning. This separation allows ML engineers to focus on model development without managing Spark clusters.
 
-This pattern mirrors real enterprise setups where data engineers and ML engineers work in different tools but share a common registry. SageMaker Feature Store would have simplified this, but the Databricks + Delta Lake approach provides better feature lineage and time-travel capabilities.
+**MLflow on Databricks** acts as the integration point, providing a unified model registry accessible to both platforms. SageMaker training jobs register models via MLflow APIs, while FastAPI pulls production models from MLflow-backed S3 storage. This pattern maintains feature lineage (Databricks → Delta Lake → MLflow) while enabling flexible training infrastructure (SageMaker, local, Databricks clusters).
 
-### **Why Event-Driven RAG Pipeline (Not Real-Time Sync)?**
+### **Event-Driven RAG Architecture**
 
-**The Question**: Why use S3 → SQS → Lambda instead of directly calling Bedrock from FastAPI?
+The GenAI pipeline uses an asynchronous, event-driven architecture to decouple embedding generation from prediction serving, optimizing for both latency and cost.
 
-**The Answer**: Decoupling and cost control.
+Patient data uploaded to S3 triggers Event Notifications that publish to an SQS queue. Lambda functions consume messages, generate embeddings via Bedrock Titan (1,536 dimensions), and write to Qdrant vector database. This architecture ensures prediction API latency remains under 200ms—calling Bedrock synchronously would add 500-1000ms per request.
 
-- **S3 Event Notifications**: Trigger embedding generation automatically when new data arrives
-- **SQS Queue**: Buffer for Lambda functions, handles traffic spikes gracefully
-- **Lambda**: Auto-scales to 1000 concurrent executions, processes embeddings asynchronously
-- **Dead Letter Queue**: Captures failures for retry without losing data
+SQS provides buffering and backpressure management, preventing Bedrock throttling during traffic spikes. Lambda's auto-scaling (up to 1000 concurrent executions) handles batch processing efficiently. Dead Letter Queues capture failures for manual retry, ensuring no data loss.
 
-Real-time embedding generation would increase API latency by 500-1000ms per request. Pre-computing embeddings offline keeps prediction latency low and Bedrock costs predictable.
+Cost predictability is another key benefit: pre-computed embeddings eliminate per-request Bedrock charges, moving costs from variable (per-prediction) to fixed (per-data-upload). For 81,412 patients, embeddings are generated once rather than on-demand for each similarity search.
 
-### **Why Drift Detection via CloudWatch Alarms (Not Statistical Tests)?**
+### **Pragmatic Drift Detection**
 
-**The Question**: Why use simple metric thresholds instead of KS tests or PSI for drift detection?
+Drift detection uses CloudWatch Metric Filters to extract prediction patterns from existing FastAPI logs, avoiding the complexity of statistical distribution comparisons.
 
-**The Answer**: Pragmatism over perfection.
+The system tracks two metrics: total predictions and high-risk predictions (probability > 0.6). When the ratio exceeds 20% (baseline is 11% from class distribution), a CloudWatch alarm triggers EventBridge, which invokes the same Step Functions retraining workflow used for weekly schedules. This heuristic detects distribution shifts without storing historical feature distributions or running Kolmogorov-Smirnov tests.
 
-CloudWatch Metric Filters extract `HighRiskPredictions / TotalPredictions` from existing FastAPI logs. When this ratio exceeds 20% (baseline is 11%), it signals potential data drift. This approach:
-- **No new code**: Uses existing prediction logs
-- **No new infrastructure**: CloudWatch alarms already in place
-- **Actionable**: Triggers retraining immediately via EventBridge
+The implementation requires zero additional code in FastAPI—logs are already written to CloudWatch for debugging. CloudWatch alarms provide built-in alerting infrastructure, eliminating the need for custom monitoring services. While statistical tests (PSI, KS) would detect subtle drift earlier, this approach provides actionable signals with minimal operational overhead.
 
-Statistical tests (KS, PSI) would be more rigorous but require storing historical distributions, running scheduled jobs, and managing state. For a v1 drift detection system, simple heuristics provide 80% of the value with 20% of the complexity.
+### **Serverless MLOps with Step Functions**
 
-### **Why Step Functions (Not Airflow or Prefect)?**
+Step Functions orchestrates the ML pipeline (training → evaluation → promotion) using AWS-native integrations, eliminating the need for dedicated orchestration infrastructure.
 
-**The Question**: Why AWS Step Functions instead of a dedicated orchestrator like Airflow?
+The state machine coordinates SageMaker training jobs, Lambda evaluation functions (ROC-AUC validation), and Lambda promotion logic (MLflow stage transitions). Retry logic and error handling are declarative, reducing custom code. SNS notifications alert on failures, while CloudWatch Logs capture execution traces.
 
-**The Answer**: Serverless simplicity and AWS-native integration.
+This serverless approach avoids running Airflow or Prefect servers, which require compute resources, patching, and monitoring. For linear ML pipelines with 3-4 tasks, Step Functions' visual editor and pay-per-execution model outweigh Airflow's advantages (complex DAGs, custom sensors, community operators). The pipeline executes weekly and on-demand, making variable costs (state transitions) more economical than fixed costs (server uptime).
 
-Step Functions orchestrates the ML pipeline: SageMaker training → Lambda evaluation → Lambda promotion. Benefits:
-- **No infrastructure**: No Airflow servers to manage, patch, or scale
-- **Native AWS**: Direct integration with SageMaker, Lambda, SNS without custom operators
-- **Visual editor**: Stakeholders can see the pipeline flow in AWS Console
-- **Pay-per-use**: Only pay for state transitions, not idle server time
+### **Centralized Model Registry with MLflow**
 
-For complex DAGs with dozens of tasks and custom sensors, Airflow wins. For a linear ML pipeline with 3-4 steps, Step Functions is the right tool.
+MLflow hosted on Databricks serves as the single source of truth for model metadata, bridging feature engineering and model training workflows.
 
-### **Why MLflow on Databricks (Not SageMaker Model Registry)?**
+Feature engineers log feature sets to Delta Lake, capturing schema and lineage. ML engineers log experiments to MLflow, tracking hyperparameters, metrics, and artifacts. SageMaker training jobs register models remotely via MLflow REST APIs, maintaining consistency across environments. Production deployments pull models from S3 paths registered in MLflow, ensuring FastAPI always references the correct "Production" stage model.
 
-**The Question**: Why host MLflow on Databricks instead of using SageMaker's built-in model registry?
+This unified registry prevents model-feature mismatches: the same MLflow run links to both the Delta Lake feature version and the trained model artifact. SageMaker Model Registry could serve this role, but keeping the registry in Databricks alongside features simplifies governance and provides better visibility for data science teams already working in that environment.
 
-**The Answer**: Consistency with data engineering workflow.
+### **Kubernetes Secrets Management with External Secrets Operator**
 
-Since feature engineering happens in Databricks notebooks, keeping the model registry there creates a unified workflow:
-1. Data engineers create features in Databricks → Delta Lake
-2. ML engineers log experiments in Databricks → MLflow
-3. SageMaker training jobs register models → MLflow (via API)
-4. FastAPI pulls models from S3 (MLflow-backed storage)
+Production Kubernetes deployments require secure, auditable credential management. External Secrets Operator syncs AWS Secrets Manager to Kubernetes secrets, centralizing secret lifecycle in AWS.
 
-SageMaker Model Registry would work, but it creates a split: features in Databricks, models in SageMaker. MLflow acts as the integration layer between both platforms.
+Secrets (Databricks tokens, Bedrock API keys, MLflow credentials) are stored in AWS Secrets Manager with encryption at rest, access logging, and automatic rotation policies. External Secrets Operator polls Secrets Manager every 1 hour, creating or updating Kubernetes secrets automatically. Pods reference these secrets as environment variables or mounted files.
 
-### **Why External Secrets Operator (Not Hardcoded Secrets)?**
+This pattern eliminates hardcoded secrets in Helm charts or ConfigMaps, which would expose credentials in version control. Centralized secrets enable compliance requirements (SOC 2, HIPAA): audit logs track who accessed secrets, rotation policies enforce security hygiene, and IAM policies restrict access to specific pods via IRSA (IAM Roles for Service Accounts).
 
-**The Question**: Why use External Secrets Operator instead of Kubernetes secrets directly?
+### **Multi-AZ Deployment for High Availability**
 
-**The Answer**: Security and centralization.
+The system deploys across two availability zones (us-east-1a, us-east-1b) to meet production reliability requirements and minimize blast radius during failures.
 
-External Secrets Operator syncs AWS Secrets Manager → Kubernetes secrets automatically:
-- **Single source of truth**: Secrets managed in AWS Secrets Manager (audited, versioned, rotated)
-- **No secret sprawl**: No hardcoded secrets in Helm charts or ConfigMaps
-- **Automatic rotation**: When secrets rotate in AWS, pods get updated automatically
+Each AZ hosts EKS worker nodes, with pods distributed via Kubernetes anti-affinity rules. The Application Load Balancer routes traffic across zones, automatically removing unhealthy targets. This configuration tolerates single-AZ failures (outages, network partitions, planned maintenance) without service disruption.
 
-This pattern is essential for enterprise compliance (SOC 2, HIPAA). Hardcoded secrets would fail security audits immediately.
+Multi-AZ deployment provides additional benefits beyond fault tolerance: load distribution reduces per-zone network saturation, and Pod Disruption Budgets ensure at least 2 replicas remain available during voluntary disruptions (cluster upgrades, node drains). While costlier than single-AZ (cross-AZ data transfer fees), this architecture demonstrates understanding of production SLA requirements (99.9%+ uptime).
 
-### **Why Multi-AZ Deployment (Not Single AZ)?**
+### **Infrastructure as Code with Terraform**
 
-**The Question**: Why deploy across us-east-1a and us-east-1b instead of single AZ?
+All AWS resources (VPC, EKS, Lambda, S3, IAM) are defined in Terraform HCL, enabling version-controlled, reproducible infrastructure.
 
-**The Answer**: High availability for production SLAs.
+Terraform's declarative syntax describes desired state, with the state file tracking actual deployed resources. The plan-before-apply workflow shows changes before execution, preventing accidental deletions. Modular design (VPC module, EKS module, Lambda module) promotes reusability across projects.
 
-Multi-AZ protects against:
-- **AZ failures**: AWS occasionally has zone-level outages (us-east-1a went down in 2021)
-- **Planned maintenance**: Can drain one AZ for upgrades without downtime
-- **Load distribution**: ALB distributes traffic across zones, reducing blast radius
-
-For a portfolio project, single AZ would suffice. But this demonstrates understanding of production reliability requirements.
-
-### **Why Terraform (Not AWS Console or CDK)?**
-
-**The Question**: Why Terraform instead of ClickOps or AWS CDK?
-
-**The Answer**: Infrastructure reproducibility and multi-cloud portability.
-
-Terraform provides:
-- **Version control**: Infrastructure changes tracked in Git
-- **Plan before apply**: See changes before execution, prevent accidents
-- **Modular design**: Reusable VPC, EKS, Lambda modules across projects
-- **Declarative syntax**: State file ensures convergence to desired config
-
-AWS CDK is excellent for TypeScript/Python developers, but Terraform's HCL is more readable for infrastructure teams and easier to onboard new contributors.
+This approach eliminates manual AWS Console operations, which lack audit trails and reproducibility. Infrastructure changes follow the same code review process as application code—pull requests, automated Terraform plan in CI, manual approval, Terraform apply on merge. State stored in S3 with DynamoDB locking enables team collaboration without state conflicts.
 
 ---
 ## Technology Stack
