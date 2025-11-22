@@ -399,11 +399,6 @@ This project was built as a **portfolio demonstration** of production-grade MLOp
 - Modern MLOps tools (SageMaker, MLflow, Bedrock)
 - Software engineering best practices (IaC, testing, observability)
 
-**Not included in this public repository**:
-- Source code (private repository to prevent plagiarism)
-- Infrastructure configurations (contains sensitive AWS account details)
-- Credentials and API keys
-
 **What you're seeing**: Case study documentation with architecture diagrams and screenshots.
 
 ---
@@ -411,13 +406,14 @@ This project was built as a **portfolio demonstration** of production-grade MLOp
 ## Contact
 
 **Hamid Hirsi**
-Machine Learning Engineer | MLOps Specialist
+Senior Platform Engineer - AI/ML
 
 - **GitHub**: [@hamidhirsi](https://github.com/hamidhirsi)
 - **LinkedIn**: [linkedin.com/in/hamidhirsi](https://linkedin.com/in/hamidhirsi)
 - **Email**: hamidhirsi7@gmail.com
 
-**Interested in discussing this project?** I'm happy to walk through the technical architecture, design decisions, and lessons learned in an interview setting.
+### **Interested in discussing this project?** 
+I'm happy to walk through the technical architecture, design decisions, and lessons learned in an interview setting.
 
 ---
 
