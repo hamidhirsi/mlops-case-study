@@ -56,7 +56,7 @@ This project demonstrates a **production-grade machine learning system** that pr
 - ✅ **Scalable Infrastructure**: Multi-AZ Kubernetes deployment handling thousands of predictions
 - ✅ **Automated MLOps**: Self-healing pipelines with weekly retraining and drift-triggered retraining
 - ✅ **Enterprise Security**: HTTPS/TLS, WAF protection, IAM role-based access, secrets management
-- ✅ **High Availability**: 99.9% uptime with 3-replica deployments and zero-downtime updates
+- ✅ **High Availability**: Multi-AZ deployment with 3-replica services and zero-downtime updates
 - ✅ **Observability**: Comprehensive logging, metrics (Prometheus/Grafana), and alerting
 - ✅ **GenAI Integration**: AI-powered explanations and similar patient search using AWS Bedrock
 
@@ -257,16 +257,16 @@ XGBoost Classifier
 **Model Performance**:
 | Metric | Value |
 |--------|-------|
-| **ROC-AUC** | 0.64 |
-| **Precision** | 0.52 |
-| **Recall** | 0.58 |
-| **F1-Score** | 0.55 |
+| **ROC-AUC** | 0.66 |
+| **Precision** | 0.17 |
+| **Recall** | 0.57 |
+| **F1-Score** | 0.26 |
 
-**Note on Performance**: ROC-AUC of 0.64 is **realistic for this problem**:
+**Note on Performance**: ROC-AUC of 0.66 is **realistic for this problem**:
 - Hospital readmission is inherently noisy (many unobservable factors)
 - Published research on this dataset shows similar results (0.60-0.68 range)
 - Class imbalance (9:1 ratio) makes high precision/recall challenging
-- **Production value**: Even 0.64 AUC provides actionable risk scores for clinical triage
+- **Production value**: Even 0.66 AUC provides actionable risk scores for clinical triage
 
 **Screenshots**:
 
@@ -314,7 +314,7 @@ XGBoost Classifier
 - **High Availability**: Multi-AZ deployment with 3 replicas per service
 - **Auto-scaling**: Horizontal Pod Autoscaler (HPA) based on CPU/memory
 - **Zero-downtime**: Rolling updates with readiness probes
-- **Cost-optimized**: VPC endpoints reduce NAT gateway costs by ~60%
+- **Cost-optimized**: VPC endpoints, S3 lifecycle policies, Lambda concurrency limits
 
 **Infrastructure as Code**:
 - 100% Terraform-managed AWS resources
@@ -546,10 +546,10 @@ async def check_for_new_model():
 ### **Model Performance**
 | Metric | Value | Clinical Interpretation |
 |--------|-------|------------------------|
-| **ROC-AUC** | 0.64 | Better than random (0.5), aligned with published research |
-| **Precision** | 0.52 | 52% of predicted readmissions are true positives |
-| **Recall** | 0.58 | Identifies 58% of actual readmissions |
-| **F1-Score** | 0.55 | Balanced precision-recall tradeoff |
+| **ROC-AUC** | 0.66 | Better than random (0.5), aligned with published research |
+| **Precision** | 0.17 | Model prioritizes recall over precision due to class imbalance |
+| **Recall** | 0.57 | Identifies 57% of actual readmissions |
+| **F1-Score** | 0.26 | Reflects precision-recall tradeoff for minority class |
 
 **Clinical Use Case**:
 - Model outputs **risk scores (0-1)**, not binary predictions
@@ -559,31 +559,27 @@ async def check_for_new_model():
 
 ---
 
-### **System Performance**
-| Metric | Value | Notes |
-|--------|-------|-------|
-| **API Response Time** | p50: 150ms, p99: 450ms | Includes model inference + Bedrock explanation |
-| **Throughput** | ~2,000 requests/5min | Limited by WAF rate limit |
-| **Uptime** | 99.9% target | Multi-AZ, 3 replicas, health checks |
-| **Model Reload** | Zero-downtime, 5-min polling | No API disruption during updates |
-| **Vector Search** | <100ms | Qdrant HNSW index |
+### **System Architecture Capabilities**
+| Component | Configuration | Expected Performance |
+|-----------|--------------|---------------------|
+| **API Deployment** | Multi-AZ, 3 replicas, HPA | Designed for high availability |
+| **WAF Rate Limit** | 2,000 requests/5min | Protects against DDoS |
+| **Model Reload** | 5-min S3 polling | Zero-downtime updates |
+| **Vector Search** | Qdrant HNSW index | Sub-second semantic search |
+
+**Note**: Performance metrics (latency, throughput, uptime) not formally load-tested. Architecture designed for production workloads but not benchmarked.
 
 ---
 
-### **Cost Optimization**
-| Optimization | Savings | Method |
-|--------------|---------|--------|
-| **VPC Endpoints** | ~60% NAT costs | S3/ECR/CloudWatch traffic stays in AWS network |
-| **Spot Instances** | ~70% EC2 costs | EKS worker nodes (not latency-critical) |
-| **S3 Lifecycle** | ~80% storage costs | Archive old models to Glacier after 90 days |
-| **Lambda Concurrency Limits** | Prevents runaway costs | Reserved concurrency caps Bedrock invocations |
+### **Cost Optimization Strategies**
+| Strategy | Expected Impact | Implementation |
+|----------|----------------|----------------|
+| **VPC Endpoints** | Reduces NAT costs | S3/ECR/CloudWatch traffic stays in AWS network |
+| **Spot Instances** | Reduces EC2 costs | EKS worker nodes (non-critical workloads) |
+| **S3 Lifecycle Policies** | Reduces storage costs | Archive old models to Glacier after 90 days |
+| **Lambda Reserved Concurrency** | Prevents runaway costs | Caps Bedrock invocations |
 
-**Estimated Monthly Cost** (without Databricks): ~$150-200 for dev/demo environment
-- EKS cluster: ~$70 (control plane + 2 t3.medium nodes)
-- ALB: ~$20
-- NAT Gateway: ~$30 (reduced by VPC endpoints)
-- S3/CloudWatch/Lambda: ~$20
-- Bedrock (usage-based): ~$10 for light traffic
+**Note**: Cost savings percentages and monthly estimates not formally measured. Strategies implemented but not benchmarked against baseline.
 
 ---
 
