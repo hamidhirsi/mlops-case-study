@@ -357,13 +357,80 @@ This project evolved through **6 phases**, transitioning from local prototyping 
 
 ---
 
+### **Model Evaluation & Limitations**
+
+**Performance Context:**
+- ROC-AUC of 0.66 is **modest but realistic** for hospital readmission prediction
+- Published research on this dataset reports similar performance (0.60-0.67 range)
+- Extreme class imbalance (8:1 ratio) limits model's ability to learn minority class patterns
+
+**Key Limitations:**
+
+1. **Low Precision (0.17)**: 83% of predicted readmissions are false positives
+   - **Impact**: Would generate many unnecessary intervention alerts in production
+   - **Root cause**: Model struggles with minority class (only 2,271 readmitted vs 18,083 not readmitted)
+
+2. **Moderate Recall (0.57)**: Model misses 43% of actual readmissions
+   - **Impact**: Significant number of high-risk patients wouldn't receive interventions
+   - **Clinical risk**: Missed readmissions translate to preventable adverse outcomes
+
+3. **Dataset Limitations**:
+   - Data from 1999-2008 (outdated medical practices, medications, protocols)
+   - Missing critical features: social determinants (work, housing, transportation), lab values (HbA1c results), medication adherence rates, post-discharge follow-up data
+
+**What Would Improve Performance:**
+
+1. **Better Data Collection**:
+   - Include social determinants of health (SDOH): type of work, housing stability, food security, transportation access
+   - Add clinical biomarkers: actual HbA1c values (not just "tested/not tested"), egFR, blood pressure trends
+   - Capture post-discharge data: medication fills, follow-up appointment attendance, patient-reported outcomes
+
+2. **Modeling Techniques**:
+   - **SMOTE or focal loss**: Better handle class imbalance vs. simple class weighting
+   - **Ensemble stacking**: Combine XGBoost + neural nets + clinical rule-based systems
+
+
+3. **Feature Engineering**:
+   - Temporal features: readmission velocity (days between prior visits), seasonality patterns
+   - Medication complexity scores: polypharmacy indicators, high-risk medication combinations
+   - Healthcare utilisation ratios: ER visits per year, hospitalizations per chronic condition
+   - Interaction terms: age × comorbidities, medication changes × length of stay
+
+**Realistic ROC-AUC Improvement Strategy:**
+
+The most impactful change would be **modernising the dataset**. Current data is from 1999-2008—predating modern diabetes medications (SGLT2 inhibitors, GLP-1 agonists), updated discharge planning protocols, and EHR-enabled care coordination. Retraining on 2020+ data with the same feature set would likely improve ROC-AUC from 0.66 → **0.70-0.72** based on published research.
+
+This means that the data is our **biggest bottleneck**.
+
+**More complex models (deep neural networks, transformers) are unlikely to help** without better data. Our PyTorch neural net (16k parameters, 3 hidden layers) already achieved ROC-AUC 0.64—only 2 points below XGBoost—suggesting we've hit the **ceiling of what this feature set can predict**. Research shows readmission is heavily influenced by non-clinical factors (type of work, housing stability, social support, health literacy) that aren't captured here either.
+
+  #### Getting to ROC-AUC 0.75+ would require:
+- Partnering with healthcare systems for modern data access (months of negotiations, IRB approvals)
+- Engineering better features from patient histories and newer data
+
+For a portfolio project, the **MLOps infrastructure** demonstrates valuable production skills:
+- MLOps platform for Data Scientists and ML Engieners
+- Automated Drift detection
+- Automated Model retraining
+- Automated RAG Pipeline
+- GenAI setup - Bedrock, RAG, Qdrant Vector Database
+
+In a real healthcare deployment, the business case for better data would be clear - but the pipeline built here would remain largely unchanged.
+
+### **Honest Assessment:**
+This project demonstrates **end-to-end MLOps capabilities** (automated retraining, drift detection, zero-downtime deployment) but the **model** would require significant improvement before clinical deployment. 
+
+The ROC-AUC of 0.66 makes it **suitable for resource prioritisation** (e.g., targeting top 20% highest-risk patients for case management) but **not reliable enough** for individual patient-level clinical decisions without human oversight.
+
+---
+
 ### **System Architecture Capabilities**
-| Component | Configuration | Expected Performance |
-|-----------|--------------|---------------------|
-| **API Deployment** | Multi-AZ, 3 replicas, HPA | Designed for high availability |
-| **WAF Rate Limit** | 2,000 requests/5min | Protects against DDoS |
+| Component | Configuration | Design Goal |
+|-----------|--------------|-------------|
+| **API Deployment** | Multi-AZ (us-east-1a, us-east-1b), 3 replicas, HPA | High availability |
+| **WAF Rate Limit** | 2,000 requests/5min | DDoS protection |
 | **Model Reload** | 5-min S3 polling | Zero-downtime updates |
-| **Vector Search** | Qdrant HNSW index | Sub-second semantic search |
+| **Vector Search** | Qdrant HNSW index, 81,412 patient embeddings | Semantic similarity search |
 
 ---
 
