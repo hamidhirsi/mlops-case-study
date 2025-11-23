@@ -1,6 +1,6 @@
 # Production MLOps System for Medicine/Healthcare Industry
 
-> **Enterprise-grade MLOps platform for healthcare using Pytorch, Databricks, AWS SageMaker, and Kubernetes**
+> **Enterprise-grade MLOps platform for healthcare using Databricks, Pytorch, SageMaker, MLFlow, and Kubernetes**
 
 [![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Terraform](https://img.shields.io/badge/Terraform-1.0+-purple.svg)](https://www.terraform.io/)
@@ -21,7 +21,7 @@
 
 ---
 
-## Business Problem/Context
+## Business Problem
 
 Hospital readmissions within 30 days represent a critical challenge for healthcare systems globally:
 
@@ -31,7 +31,7 @@ Hospital readmissions within 30 days represent a critical challenge for healthca
 
 This makes readmission prediction a **top priority** for healthcare organisations worldwide.
 
-### Business Goal
+## Business Goal
 
 **Predict whether a diabetic patient will be readmitted to the hospital within 30 days** based on:
 - Demographics (age, gender, race)
@@ -39,7 +39,7 @@ This makes readmission prediction a **top priority** for healthcare organisation
 - Hospital utilisation patterns
 - Lab results and medication changes
 
-### The Dataset
+## The Dataset
 
 **101,766 patient records** from 130 US hospitals (1999-2008)
 - Source: [UCI Diabetes 130-US Hospitals](https://archive.ics.uci.edu/ml/datasets/diabetes+130-us+hospitals+for+years+1999-2008)
