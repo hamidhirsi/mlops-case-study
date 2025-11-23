@@ -1,6 +1,6 @@
-# Hospital Readmission Prediction: Production ML System
+# Production MLOps System for Medicine/Healthcare Industry
 
-> **Enterprise-grade MLOps platform for healthcare predictive analytics using Databricks, AWS SageMaker, and Kubernetes**
+> **Enterprise-grade MLOps platform for healthcare using Pytorch, Databricks, AWS SageMaker, and Kubernetes**
 
 [![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Terraform](https://img.shields.io/badge/Terraform-1.0+-purple.svg)](https://www.terraform.io/)
@@ -21,22 +21,22 @@
 
 ---
 
-## Business Context
+## Business Problem/Context
 
 Hospital readmissions within 30 days represent a critical challenge for healthcare systems globally:
 
 - **UK**: NHS spends **£2.5 billion/year** on preventable readmissions (15-20% rate)
 - **US**: Medicare spends **$26 billion/year** on unplanned readmissions (~20% of discharged patients)
-- **Regulatory Impact**: Both CMS and NHS actively penalize hospitals with high readmission rates
+- **Regulatory Impact**: Both CMS and NHS actively penalise hospitals with high readmission rates
 
-This makes readmission prediction a **top priority** for healthcare organizations worldwide.
+This makes readmission prediction a **top priority** for healthcare organisations worldwide.
 
-### The Challenge
+### Business Goal
 
 **Predict whether a diabetic patient will be readmitted to the hospital within 30 days** based on:
 - Demographics (age, gender, race)
 - Medical history (diagnoses, medications, procedures)
-- Hospital utilization patterns
+- Hospital utilisation patterns
 - Lab results and medication changes
 
 ### The Dataset
@@ -44,6 +44,7 @@ This makes readmission prediction a **top priority** for healthcare organization
 **101,766 patient records** from 130 US hospitals (1999-2008)
 - Source: [UCI Diabetes 130-US Hospitals](https://archive.ics.uci.edu/ml/datasets/diabetes+130-us+hospitals+for+years+1999-2008)
 - Features: 73 original attributes
+
 - Target: Binary classification (readmitted ≤30 days vs. not readmitted)
 
 ---
@@ -53,12 +54,12 @@ This makes readmission prediction a **top priority** for healthcare organization
 This project demonstrates a **production-grade machine learning system** that predicts readmission risk for diabetic patients, enabling proactive clinical interventions.
 
 **What makes this production-grade?**
-- ✅ **Automated MLOps**: Self-healing pipelines with weekly retraining and drift-triggered retraining
-- ✅ **GenAI Integration**: AI-powered explanations and similar patient search using AWS Bedrock
+- ✅ **Automated MLOps**: MLOps pipelines with weekly scheduled retraining and drift-detection triggered retraining
+- ✅ **GenAI Integration**: AI Chatbot that can explain the Models predictions and semantic search using AWS Bedrock, RAG, and Vector Database
 - ✅ **Observability**: Comprehensive logging, metrics (Prometheus/Grafana), and alerting
 - ✅ **Enterprise Security**: HTTPS/TLS, WAF protection, IAM role-based access, secrets management
 - ✅ **High Availability**: Multi-AZ deployment (us-east-1a, us-east-1b) with 3-replica services
-- ✅ **Scalable Infrastructure**: Kubernetes on EKS with auto-scaling and zero-downtime updates
+- ✅ **Scalable Infrastructure**: Terraform IaC + Helm Charts on Kubernetes, with auto-scaling and zero-downtime updates
 
 ---
 
