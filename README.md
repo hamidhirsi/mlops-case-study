@@ -325,12 +325,12 @@ This project evolved through **6 phases**, transitioning from local prototyping 
 
 ---
 
-### Phase 6: Production Hardening ✅
+### Phase 6: Production Hardening 
 
-- Implemented security hardening (private subnets, VPC endpoints, TLS 1.2+, WAF rules, IAM IRSA)
-- Configured health checks (liveness/readiness probes), graceful degradation, error handling
-- Optimized costs (VPC endpoints, S3 lifecycle policies, Lambda concurrency limits)
-- Ensured high availability (Pod Disruption Budgets, multi-AZ, resource requests/limits)
+- Implement security hardening (private subnets, VPC endpoints, TLS 1.2+, WAF rules, IAM IRSA)
+- Configure health checks (liveness/readiness probes), graceful degradation, error handling
+- Optimize costs (VPC endpoints, S3 lifecycle policies, Lambda concurrency limits)
+- Ensure high availability (Pod Disruption Budgets, multi-AZ, resource requests/limits)
 
 ---
 ## Results & Impact
