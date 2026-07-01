@@ -55,7 +55,7 @@ This project demonstrates a **production-grade machine learning system** that pr
 
 **What makes this production-grade?**
 - ✅ **Automated MLOps**: MLOps pipelines with weekly scheduled retraining and drift-detection triggered retraining
-- ✅ **GenAI Integration**: AI Chatbot that can explain the Models predictions and semantic search using AWS Bedrock, RAG, and Vector Database
+- ✅ **GenAI Integration**: AI Chatbot that can explain the Models predictions and semantic search in plain language using AWS Bedrock, RAG, and Vector Database. An interpretability layer over the classifier.
 - ✅ **Observability**: Comprehensive logging, metrics (Prometheus/Grafana), and alerting
 - ✅ **Enterprise Security**: HTTPS/TLS, WAF protection, IAM role-based access, secrets management
 - ✅ **High Availability**: Multi-AZ deployment (us-east-1a, us-east-1b) with 3-replica services
@@ -90,7 +90,7 @@ EventBridge (Schedule + Drift Alarm) → Step Functions → SageMaker → Lambda
   - Event-based: CloudWatch alarm when drift detected (high-risk predictions > 20%)
 - **Orchestration**: AWS Step Functions with error handling
 - **Training**: SageMaker with XGBoost on ml.m5.2xlarge instances
-- **Validation**: Lambda evaluates ROC-AUC (must be > 0.75)
+- **Validation**: Lambda evaluates new model and promotes only if it beats the current model's ROC-AUC
 - **Registry**: MLflow on Databricks for model versioning
 - **Promotion**: Automatic staging → production transition on validation pass
 
@@ -98,11 +98,12 @@ EventBridge (Schedule + Drift Alarm) → Step Functions → SageMaker → Lambda
 ```
 S3 Upload → S3 Event → SQS → Lambda → Bedrock Embeddings → Qdrant Vector DB
 ```
-- **Ingestion**: Event-driven embedding generation for 81k+ patients
-- **Embeddings**: AWS Bedrock Titan Embeddings (1,536 dimensions)
-- **Storage**: Qdrant vector database on Kubernetes
-- **Search**: Semantic similarity search for case-based reasoning
-- **Explanations**: Claude 3 Haiku generates clinical insights
+- **What is embedded**: Each historical patient record is converted into a structured text summary of its clinical profile (diagnoses, prior inpatient visits, medications, length of stay) and embedded as one vector per patient — 81,412 in total
+- **Embeddings**: AWS Bedrock Titan Text Embeddings (1,536 dimensions)
+- **Ingestion**: The initial 81,412 patients were embedded in a one-off batch backfill; new patient records uploaded to S3 are embedded incrementally via the event-driven S3 → SQS → Lambda → Bedrock flow
+- **Storage**: Qdrant vector database on Kubernetes (HNSW index)
+- **Retrieval**: When a patient is scored, their profile is embedded and the top-K most clinically similar patient cases — with their actual readmission outcomes — are returned
+- **Explanation**: Claude 3 Haiku (via Bedrock) receives the risk score, top model feature drivers, and the retrieved similar patients, and generates a plain-language explanation
 
 #### 4. **Observability**
 ```
@@ -180,6 +181,53 @@ Terraform's declarative syntax describes desired state, with the state file trac
 This approach eliminates manual AWS Console operations, which lack audit trails and reproducibility. Infrastructure changes follow the same code review process as application code—pull requests, automated Terraform plan in CI, manual approval, Terraform apply on merge. State stored in S3 with state locking enables team collaboration without state conflicts.
 
 ---
+
+## Regulated Deployment Considerations
+
+This project runs on a public, de-identified dataset, so data protection isn't a live concern here. But healthcare, finance, and government are the industries where MLOps actually gets hard — the pipeline changes very little, but the controls around it change a lot. This section documents what I'd change to take this system into a regulated production environment.
+
+### Data Residency
+
+All compute and storage would be pinned to the required jurisdiction (e.g. `eu-west-2` for UK/NHS, or a specific in-country region for a sovereign client). EKS, S3, SageMaker, MLflow, and Bedrock all run in-region, and cross-region replication for DR is restricted to approved regions only. Because the infrastructure is 100% Terraform, region is effectively a variable — residency is a data-flow-mapping problem, not an architectural rewrite.
+
+### Minimising What Leaves the Classifier Boundary
+
+The model doesn't need identifiers to make a prediction, and the explanation layer certainly doesn't. In a real deployment I'd apply **data minimisation** at every hop: strip or pseudonymise direct identifiers (name, NHS number, MRN) before data reaches the embedding or LLM step, using PII detection (AWS Comprehend Medical, or Presidio) to redact/tokenise, and re-hydrate identifiers only in the trusted application layer if needed. The principle: the fewer systems that touch raw personal data, the smaller the compliance surface.
+
+### The LLM / Embedding Step — The Hardest Decision
+
+Sending patient-derived text to an embedding model and an LLM is the highest-scrutiny data flow in the entire system. There is no single right answer — regulated organisations choose along a spectrum based on data sensitivity, model-quality needs, cost, and how much operational burden they can absorb.
+
+**Option 1 — Managed model API with contractual and network controls.**
+Azure OpenAI, AWS Bedrock, or GCP Vertex, using a region-pinned endpoint, a no-training / no-retention guarantee, private networking (PrivateLink / VPC endpoints so nothing traverses the public internet), and a signed BAA/DPA. This is what *most* regulated enterprises actually use — Azure OpenAI in particular is dominant in finance and healthcare precisely because it wraps frontier models in Microsoft's enterprise compliance posture. You get frontier-model quality with the data staying inside the provider's in-region managed service.
+
+**Option 2 — Self-hosted open-weight model inside your own boundary.**
+An open model (Llama, Mistral, etc.) served on your own infrastructure — a SageMaker endpoint in-VPC, or vLLM/TGI on EKS GPU nodes. Data never leaves your account at all. You trade frontier-model quality (the gap has narrowed but is still real) and take on GPU cost, serving ops, scaling, and your own evals — in exchange for maximum control and residency.
+
+**Option 3 — Sovereign or air-gapped.**
+For the highest-sensitivity workloads (government, defence, sovereign wealth), the model runs inside a sovereign cloud region, GovCloud, or a fully air-gapped environment with no internet egress. Maximum control and data sovereignty, maximum operational burden, most constrained model choice.
+
+| Approach | Data leaves your account? | Model quality | Ops burden / cost | Typical fit |
+|----------|--------------------------|---------------|-------------------|-------------|
+| **Managed API + controls** | Yes (to in-region managed service) | Frontier | Low, per-token | Most regulated enterprises |
+| **Self-hosted open model** | No | Good, lags frontier | High (GPU + serving) | High sensitivity, need for full control |
+| **Sovereign / air-gapped** | No | Constrained | Highest | Government, defence, sovereign |
+
+These aren't mutually exclusive — a common pattern is **Tier 1 managed API combined with Tier 2 de-identification**, so even the managed service only ever sees pseudonymised data. For this project, Bedrock under a BAA with a VPC endpoint would be the pragmatic Tier 1 choice; a real deployment handling highly sensitive data would weigh Tier 2 self-hosting.
+
+### Right to Erasure
+
+Under GDPR's right to be forgotten, a RAG system has a subtle trap: **the vector store is a second copy of personal data.** Erasing a patient means deleting them from S3, from the training data, *and* from the Qdrant collection — and retraining so their data no longer influences the model. Any RAG-over-personal-data design has to treat the vector store as in-scope for erasure from day one, not as a cache people forget about.
+
+### Lineage, Audit, and Explainability as Compliance Features
+
+Several components already built here double as compliance capabilities in a regulated frame:
+
+- **Model lineage** — MLflow ties every prediction back to a specific model version, its training run, and its metrics. Combined with Terraform state (infra provenance) and CloudWatch (access logs), you can answer "which model made this decision, what trained it, and who deployed it" — core to any audit.
+- **Explainability** — under GDPR provisions on automated decision-making, an affected individual can have a right to an explanation. The SHAP-style feature importances and the LLM explanation layer deliver exactly that, so interpretability is a regulatory asset, not just a nice-to-have.
+- **Access control** — IRSA and least-privilege IAM cover machine access. A regulated deployment would add human RBAC over any access to personal data, with its own audit logging and break-glass procedures, separate from pod-level permissions.
+
+---
 ## Technology Stack
 
 ### **Infrastructure & DevOps**
@@ -204,7 +252,7 @@ This approach eliminates manual AWS Console operations, which lack audit trails 
 ### **GenAI & RAG**
 | Technology | Purpose |
 |------------|---------|
-| **AWS Bedrock** | Claude 3.5 Sonnet (explanations), Titan Embeddings |
+| **AWS Bedrock** | Claude 3 Haiku (explanations), Titan Embeddings |
 | **Qdrant** | Vector database for patient similarity search |
 
 ### **Data Engineering**
@@ -304,7 +352,7 @@ This project evolved through **6 phases**, transitioning from local prototyping 
 
 ### Phase 4: GenAI/RAG Integration ✅
 
-- Integrated AWS Bedrock (Claude 3.5 Sonnet for explanations, Titan Embeddings for patient similarity)
+- Integrated AWS Bedrock (Claude 3 Haiku for explanations, Titan Embeddings for patient similarity)
 - Deployed Qdrant vector database on Kubernetes with 81,412 patient embeddings
 - Built event-driven RAG pipeline (S3 → SQS → Lambda → Bedrock → Qdrant)
 - Created `/chat` endpoint for conversational AI and `/similar-patients` for semantic search
